@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gesture Draw</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0d0d12;
+      color: #e2e2e6;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px 16px;
+      gap: 14px;
+    }
+
+    /* ── Header ── */
+    .header {
+      width: 100%;
+      max-width: 640px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      color: #fff;
+    }
+
+    .title span { color: #7c6fff; }
+
+    #gesture-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #1a1a26;
+      border: 1px solid #2a2a3c;
+      border-radius: 24px;
+      padding: 6px 14px;
+      font-size: 0.82rem;
+    }
+
+    #status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #444;
+      transition: background 0.12s;
+    }
+
+    /* ── Camera container ── */
+    #cam-wrap {
+      position: relative;
+      width: 640px;
+      max-width: 100%;
+      height: 480px;
+      background: #0a0a10;
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+    }
+
+    #video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);   /* mirror for selfie feel */
+    }
+
+    #canvas-draw, #canvas-overlay {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    #cam-placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #333;
+      gap: 12px;
+      font-size: 0.9rem;
+    }
+
+    #cam-placeholder .icon { font-size: 3rem; }
+
+    /* ── Controls ── */
+    #controls {
+      width: 640px;
+      max-width: 100%;
+      background: #1a1a26;
+      border: 1px solid #2a2a3c;
+      border-radius: 12px;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .ctrl-group {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .ctrl-label {
+      font-size: 0.72rem;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    #color-picker {
+      width: 42px;
+      height: 32px;
+      border: 2px solid #2a2a3c;
+      border-radius: 6px;
+      cursor: pointer;
+      padding: 2px;
+      background: none;
+    }
+
+    #brush-size {
+      width: 110px;
+      accent-color: #7c6fff;
+      cursor: pointer;
+    }
+
+    .divider {
+      width: 1px;
+      height: 36px;
+      background: #2a2a3c;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.83rem;
+      font-weight: 500;
+      transition: filter 0.12s, transform 0.1s;
+    }
+
+    .btn:active { transform: scale(0.96); }
+
+    #btn-cam {
+      background: #1f3322;
+      color: #5ddc85;
+      border: 1px solid #2d4a35;
+    }
+
+    #btn-cam.active {
+      background: #331f1f;
+      color: #e07070;
+      border-color: #4a2d2d;
+    }
+
+    #btn-clear {
+      background: #1e1e2c;
+      color: #9090b0;
+      border: 1px solid #2a2a3c;
+    }
+
+    #btn-save {
+      background: #2a1f4a;
+      color: #b0a0ff;
+      border: 1px solid #3d2d6a;
+    }
+
+    /* ── Legend ── */
+    #legend {
+      display: flex;
+      gap: 20px;
+      font-size: 0.77rem;
+      color: #555;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .leg { display: flex; align-items: center; gap: 6px; }
+    .leg-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ── Loading overlay ── */
+    #loading {
+      position: fixed;
+      inset: 0;
+      background: #0d0d12;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+      gap: 20px;
+    }
+
+    #loading.hidden { display: none; }
+
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 3px solid #222;
+      border-top-color: #7c6fff;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+
+    #load-msg { color: #666; font-size: 0.88rem; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<!-- ── Loading Screen ─────────────────────────────────────────────────────── -->
+<div id="loading">
+  <div class="spinner"></div>
+  <div id="load-msg">Initializing MediaPipe…</div>
+</div>
+
+<!-- ── Header ────────────────────────────────────────────────────────────── -->
+<div class="header">
+  <div class="title">✋ Gesture<span>Draw</span></div>
+  <div id="gesture-badge">
+    <div id="status-dot"></div>
+    <span id="status-text">No hand</span>
+  </div>
+</div>
+
+<!-- ── Camera ────────────────────────────────────────────────────────────── -->
+<div id="cam-wrap">
+  <div id="cam-placeholder">
+    <div class="icon">📷</div>
+    <div>Click "Start Camera" to begin</div>
+  </div>
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas-draw"></canvas>
+  <canvas id="canvas-overlay"></canvas>
+</div>
+
+<!-- ── Controls ──────────────────────────────────────────────────────────── -->
+<div id="controls">
+  <div class="ctrl-group">
+    <div class="ctrl-label">Color</div>
+    <input type="color" id="color-picker" value="#ffffff">
+  </div>
+
+  <div class="ctrl-group">
+    <div class="ctrl-label">Brush · <span id="size-val">4</span>px</div>
+    <input type="range" id="brush-size" min="1" max="20" value="4">
+  </div>
+
+  <div class="divider"></div>
+
+  <button class="btn" id="btn-cam">📷 Start Camera</button>
+  <button class="btn" id="btn-clear">🗑 Clear</button>
+  <button class="btn" id="btn-save">💾 Save</button>
+</div>
+
+<!-- ── Legend ────────────────────────────────────────────────────────────── -->
+<div id="legend">
+  <div class="leg"><div class="leg-dot" style="background:#4ade80"></div>Index finger up → Draw</div>
+  <div class="leg"><div class="leg-dot" style="background:#f87171"></div>Open palm → Erase</div>
+  <div class="leg"><div class="leg-dot" style="background:#94a3b8"></div>Fist → Idle</div>
+</div>
+
+
+<script type="module">
+// ─── MediaPipe Import ─────────────────────────────────────────────────────────
+import { HandLandmarker, FilesetResolver }
+  from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/vision_bundle.js";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+const ERASE_RADIUS           = 40;
+const SMOOTHING_ALPHA        = 0.5;   // EMA weight  (0=laggy … 1=raw)
+const REQUIRED_STABLE_FRAMES = 5;     // frames gesture must hold before switching
+
+// Landmark indices
+const WRIST=0, INDEX_MCP=5, INDEX_PIP=6, INDEX_TIP=8;
+const MIDDLE_TIP=12, MIDDLE_PIP=10;
+const RING_TIP=16,   RING_PIP=14;
+const PINKY_TIP=20,  PINKY_PIP=18;
+
+// Palm center = average of wrist + 4 knuckles
+const PALM_IDS = [0, 5, 9, 13, 17];
+
+const HAND_CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],           // thumb
+  [0,5],[5,6],[6,7],[7,8],           // index
+  [0,9],[9,10],[10,11],[11,12],      // middle
+  [0,13],[13,14],[14,15],[15,16],    // ring
+  [0,17],[17,18],[18,19],[19,20],    // pinky
+  [5,9],[9,13],[13,17],              // palm knuckles
+];
+
+const GESTURE_COLOR = { DRAW:'#4ade80', ERASE:'#f87171', IDLE:'#94a3b8' };
+const GESTURE_LABEL = { DRAW:'Drawing ✏️', ERASE:'Erasing 🗑', IDLE:'Idle ✋' };
+
+// ─── DOM refs ─────────────────────────────────────────────────────────────────
+const video         = document.getElementById('video');
+const drawCanvas    = document.getElementById('canvas-draw');
+const overlayCanvas = document.getElementById('canvas-overlay');
+const dCtx          = drawCanvas.getContext('2d');
+const oCtx          = overlayCanvas.getContext('2d');
+const colorPicker   = document.getElementById('color-picker');
+const brushSlider   = document.getElementById('brush-size');
+const sizeVal       = document.getElementById('size-val');
+const statusDot     = document.getElementById('status-dot');
+const statusText    = document.getElementById('status-text');
+const btnCam        = document.getElementById('btn-cam');
+const btnClear      = document.getElementById('btn-clear');
+const btnSave       = document.getElementById('btn-save');
+const loadingEl     = document.getElementById('loading');
+const loadMsg       = document.getElementById('load-msg');
+const placeholder   = document.getElementById('cam-placeholder');
+
+// ─── App state ────────────────────────────────────────────────────────────────
+let handLandmarker = null;
+let animFrame      = null;
+let running        = false;
+
+// Debounce state
+let candidate    = 'IDLE';
+let stableCount  = 0;
+let activeGesture = 'IDLE';
+
+// Draw state
+let smoothX = null, smoothY = null;
+let drawing = false;
+let lastX   = null, lastY = null;
+
+// ─── MediaPipe init ───────────────────────────────────────────────────────────
+async function initModel() {
+  try {
+    loadMsg.textContent = 'Loading WASM runtime…';
+    const vision = await FilesetResolver.forVisionTasks(
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm'
+    );
+    loadMsg.textContent = 'Downloading hand model…';
+    handLandmarker = await HandLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath:
+          'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+        delegate: 'GPU',
+      },
+      runningMode: 'VIDEO',
+      numHands: 1,
+    });
+    loadingEl.classList.add('hidden');
+  } catch (err) {
+    loadMsg.textContent = '❌ ' + err.message;
+    console.error(err);
+  }
+}
+
+// ─── Camera ───────────────────────────────────────────────────────────────────
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+    });
+    video.srcObject = stream;
+    await new Promise(r => (video.onloadedmetadata = r));
+    video.play();
+
+    const W = video.videoWidth  || 640;
+    const H = video.videoHeight || 480;
+    drawCanvas.width  = overlayCanvas.width  = W;
+    drawCanvas.height = overlayCanvas.height = H;
+
+    placeholder.style.display = 'none';
+    running = true;
+    btnCam.textContent = '⏹ Stop Camera';
+    btnCam.classList.add('active');
+    loop();
+  } catch (e) {
+    alert('Camera error: ' + e.message);
+  }
+}
+
+function stopCamera() {
+  running = false;
+  cancelAnimationFrame(animFrame);
+  video.srcObject?.getTracks().forEach(t => t.stop());
+  video.srcObject = null;
+  oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  placeholder.style.display = 'flex';
+  btnCam.textContent = '📷 Start Camera';
+  btnCam.classList.remove('active');
+  setStatus('IDLE', false);
+  resetDraw();
+}
+
+// ─── Gesture detection ────────────────────────────────────────────────────────
+// In MediaPipe normalised coords: y=0 is top, y=1 is bottom.
+// tip.y < pip.y  →  finger is extended/pointing up
+// tip.y > pip.y  →  finger is curled
+
+function detectGesture(lm) {
+  const indexUp  = lm[INDEX_TIP].y  < lm[INDEX_PIP].y;
+  const middleUp = lm[MIDDLE_TIP].y < lm[MIDDLE_PIP].y;
+  const ringUp   = lm[RING_TIP].y   < lm[RING_PIP].y;
+  const pinkyUp  = lm[PINKY_TIP].y  < lm[PINKY_PIP].y;
+
+  // DRAW: only index finger up, remaining three curled
+  if (indexUp && !middleUp && !ringUp && !pinkyUp) return 'DRAW';
+
+  // ERASE: all four fingers up = open palm
+  if (indexUp && middleUp && ringUp && pinkyUp) return 'ERASE';
+
+  // IDLE: fist (all curled) or any ambiguous transition
+  return 'IDLE';
+}
+
+// ─── UI helpers ───────────────────────────────────────────────────────────────
+function setStatus(gesture, handPresent = true) {
+  statusDot.style.background = handPresent ? GESTURE_COLOR[gesture] : '#444';
+  statusText.textContent     = handPresent ? GESTURE_LABEL[gesture] : 'No hand';
+}
+
+function resetDraw() {
+  smoothX = smoothY = null;
+  lastX   = lastY   = null;
+  drawing = false;
+}
+
+// ─── Skeleton drawing ─────────────────────────────────────────────────────────
+function drawSkeleton(lm, W, H) {
+  // Mirror x to match the CSS-flipped video
+  const px = i => [(1 - lm[i].x) * W, lm[i].y * H];
+
+  oCtx.strokeStyle = 'rgba(255,255,255,0.35)';
+  oCtx.lineWidth   = 1.5;
+  for (const [a, b] of HAND_CONNECTIONS) {
+    const [ax, ay] = px(a);
+    const [bx, by] = px(b);
+    oCtx.beginPath();
+    oCtx.moveTo(ax, ay);
+    oCtx.lineTo(bx, by);
+    oCtx.stroke();
+  }
+
+  for (let i = 0; i < 21; i++) {
+    const [x, y] = px(i);
+    const isKey  = i === INDEX_TIP;
+    oCtx.fillStyle = isKey ? '#4ade80' : 'rgba(255,255,255,0.65)';
+    oCtx.beginPath();
+    oCtx.arc(x, y, isKey ? 5 : 3, 0, Math.PI * 2);
+    oCtx.fill();
+  }
+}
+
+// ─── Main render loop ─────────────────────────────────────────────────────────
+let lastTs = -1;
+
+function loop() {
+  if (!running) return;
+  animFrame = requestAnimationFrame(loop);
+  if (video.readyState < 2 || !handLandmarker) return;
+
+  const now = performance.now();
+  if (now === lastTs) return;
+  lastTs = now;
+
+  const W = overlayCanvas.width;
+  const H = overlayCanvas.height;
+
+  oCtx.clearRect(0, 0, W, H);   // overlay cleared every frame
+
+  // ── Detection ──────────────────────────────────────────────────────────────
+  const results    = handLandmarker.detectForVideo(video, now);
+  const lm         = results.landmarks?.[0] ?? null;
+  const rawGesture = lm ? detectGesture(lm) : 'IDLE';
+
+  // ── Debounce ───────────────────────────────────────────────────────────────
+  if (rawGesture === candidate) {
+    stableCount = Math.min(stableCount + 1, REQUIRED_STABLE_FRAMES * 3);
+  } else {
+    candidate   = rawGesture;
+    stableCount = 1;
+  }
+
+  if (stableCount >= REQUIRED_STABLE_FRAMES) {
+    if (rawGesture !== activeGesture) resetDraw();   // sync reset on transition
+    activeGesture = rawGesture;
+  }
+
+  setStatus(activeGesture, !!lm);
+  if (!lm) { resetDraw(); return; }
+
+  const color = colorPicker.value;
+  const lineW = +brushSlider.value;
+
+  // ── DRAW ───────────────────────────────────────────────────────────────────
+  if (activeGesture === 'DRAW') {
+    const rawX = (1 - lm[INDEX_TIP].x) * W;   // mirror x
+    const rawY = lm[INDEX_TIP].y * H;
+
+    // EMA smoothing
+    smoothX = smoothX === null ? rawX : SMOOTHING_ALPHA * rawX + (1 - SMOOTHING_ALPHA) * smoothX;
+    smoothY = smoothY === null ? rawY : SMOOTHING_ALPHA * rawY + (1 - SMOOTHING_ALPHA) * smoothY;
+
+    if (drawing && lastX !== null) {
+      dCtx.strokeStyle = color;
+      dCtx.lineWidth   = lineW;
+      dCtx.lineCap     = 'round';
+      dCtx.lineJoin    = 'round';
+      dCtx.beginPath();
+      dCtx.moveTo(lastX, lastY);
+      dCtx.lineTo(smoothX, smoothY);
+      dCtx.stroke();
+    }
+
+    lastX = smoothX; lastY = smoothY; drawing = true;
+
+    // Glowing cursor dot on overlay
+    oCtx.fillStyle  = color;
+    oCtx.shadowColor = color;
+    oCtx.shadowBlur  = 10;
+    oCtx.beginPath();
+    oCtx.arc(smoothX, smoothY, lineW / 2 + 3, 0, Math.PI * 2);
+    oCtx.fill();
+    oCtx.shadowBlur = 0;
+
+  // ── ERASE ──────────────────────────────────────────────────────────────────
+  } else if (activeGesture === 'ERASE') {
+    // Use palm centre = average of wrist + 4 MCP knuckles
+    const ex = PALM_IDS.reduce((s, i) => s + (1 - lm[i].x), 0) / PALM_IDS.length * W;
+    const ey = PALM_IDS.reduce((s, i) => s + lm[i].y,       0) / PALM_IDS.length * H;
+
+    // Erase pixels on drawing canvas
+    dCtx.save();
+    dCtx.globalCompositeOperation = 'destination-out';
+    dCtx.beginPath();
+    dCtx.arc(ex, ey, ERASE_RADIUS, 0, Math.PI * 2);
+    dCtx.fill();
+    dCtx.restore();
+
+    // Dashed eraser ring on overlay
+    oCtx.strokeStyle = '#f87171';
+    oCtx.lineWidth   = 2;
+    oCtx.setLineDash([5, 4]);
+    oCtx.beginPath();
+    oCtx.arc(ex, ey, ERASE_RADIUS, 0, Math.PI * 2);
+    oCtx.stroke();
+    oCtx.setLineDash([]);
+
+  // ── IDLE ───────────────────────────────────────────────────────────────────
+  } else {
+    resetDraw();
+  }
+
+  drawSkeleton(lm, W, H);
+}
+
+// ─── Control events ───────────────────────────────────────────────────────────
+brushSlider.addEventListener('input', () => (sizeVal.textContent = brushSlider.value));
+
+btnCam.addEventListener('click', () => running ? stopCamera() : startCamera());
+
+btnClear.addEventListener('click', () =>
+  dCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height));
+
+btnSave.addEventListener('click', () => {
+  // Composite: mirrored video frame + drawing strokes
+  const out = document.createElement('canvas');
+  out.width  = drawCanvas.width;
+  out.height = drawCanvas.height;
+  const ctx  = out.getContext('2d');
+
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, out.width, out.height);      // black background
+
+  ctx.drawImage(drawCanvas, 0, 0);                // strokes on top
+
+  Object.assign(document.createElement('a'), {
+    download: `gesture-draw-${Date.now()}.png`,
+    href: out.toDataURL('image/png'),
+  }).click();
+});
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+initModel();
+</script>
+</body>
+</html>
